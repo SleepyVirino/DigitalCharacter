@@ -1,0 +1,2 @@
+OPENAI_KEY = 'sk-dFwMfHIi6E3TiH9XF141Bd7666Cf4219B6537a0dDa71FaBf'
+OPENAI_BASE_URL = "https://api.xty.app/v1"

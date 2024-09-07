@@ -1,28 +1,52 @@
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
-
-
 class MemoryModule:
     def __init__(self):
-        self.episodic_memory = []
-        self.semantic_memory = []
-
-    def _embed_query(self, query):
-        # 将查询转化为嵌入向量，这里简化为模拟数据
-        return np.random.rand(1, 512)
-
-    def _search_memory(self, query):
-        query_vec = self._embed_query(query)
-        memory_vectors = np.array([mem['embedding'] for mem in self.episodic_memory])
-
-        similarities = cosine_similarity(query_vec, memory_vectors)
-        best_match = np.argmax(similarities)
-        return self.episodic_memory[best_match] if similarities[0][best_match] > 0.8 else None
-
-    def store_memory(self, new_memory):
-        self.episodic_memory.append(new_memory)
-        self._summarize_and_forget()
-
-    def _summarize_and_forget(self):
-        # 对记忆进行聚类和总结，简化为伪代码
         pass
+
+    def store(self, memory):
+        """
+        将新记忆存储到对应的记忆库中。
+        """
+        pass
+
+    def retrieve(self, query):
+        """
+        根据查询文本检索相关记忆。
+        """
+        pass
+
+    def delete(self, memory):
+        """
+        删除记忆
+        """
+        pass
+
+
+class MemoryManager:
+    def __init__(self):
+        self.summary = None
+        self.work_memory = None
+        self.episodic_memory = None
+        self.semantic_memory = None
+        pass
+
+    def learn(self):
+        """
+        短期工作记忆学习为情景记忆, 语义记忆不变
+        :return:
+        """
+        pass
+
+    def forget(self):
+        """
+        情景记忆和短期工作记忆会遗忘，语义记忆不变
+        :return:
+        """
+        pass
+
+    def self_monitor(self):
+        """
+        自我监控理论更新对世界的总结
+        :return:
+        """
+        pass
+
