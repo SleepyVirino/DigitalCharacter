@@ -1,7 +1,10 @@
 import json
-from datetime import datetime, timedelta
 
-from openai import embeddings
+from datetime import datetime, timedelta
+from sklearn.cluster import DBSCAN
+
+from server.agent.prompt import SUMMARY_PROMPT
+from server.agent.brain.utils import organize_work_memories
 
 
 class MemoryModule:
@@ -43,7 +46,7 @@ class WorkMemory(MemoryModule):
 
     def store(self, memory):
         # Compute the embedding for the new memory entry
-        memory["embedding"] = self.embedding_model.encode(memory["text"])
+        memory["embedding"] = self.embedding_model.encode(memory["event"])
         self.memory.append(memory)
         if self.embeddings.size == 0:
             self.embeddings = np.array([memory["embedding"]])
@@ -51,7 +54,44 @@ class WorkMemory(MemoryModule):
             self.embeddings = np.vstack([self.embeddings, memory["embedding"]])
         json.dump(self.memory, open(self.path, 'w'))
 
-    def retrieve(self, query, k=3, similarity_threshold=0.8):
+    def retrieve(self, hours=3, limit=5):
+        if not len(self.memory):
+            return []
+
+        date = datetime.now() - timedelta(hours=hours)
+        result = [m for m in self.memory if
+                  datetime.strptime(m["time"], "%Y-%m-%d %H:%M:%S") >= date]
+        return sorted(result, key=lambda x: x['time'])[-limit:]
+
+    def delete(self, date):
+        self.memory = [m for m in self.memory if
+                       datetime.strptime(m["time"], "%Y-%m-%d %H:%M:%S") >= date]
+        json.dump(self.memory, open(self.path, 'w'))
+
+
+class EpisodicMemory(MemoryModule):
+    def __init__(self, path, embedding_model):
+        super().__init__()
+        self.path = path
+        self.embedding_model = embedding_model
+        self.memory = json.load(open(path, 'r'))
+        # Load embeddings from the stored memory
+
+        self.embeddings = np.array([entry['embedding'] for entry in self.memory])
+
+    def store(self, memory):
+        # Compute the embedding for the new memory entry
+        memory["embedding"] = self.embedding_model.encode(memory["event"])
+        self.memory.append(memory)
+        if self.embeddings.size == 0:
+            self.embeddings = np.array([memory["embedding"]])
+        else:
+            self.embeddings = np.vstack([self.embeddings, memory["embedding"]])
+        json.dump(self.memory, open(self.path, 'w'))
+
+    def retrieve(self, query, k=3, similarity_threshold=0.5):
+        if not len(self.memory):
+            return []
         query_embedding = self.embedding_model.encode(query)
         # Compute cosine similarity between the query embedding and stored embeddings
         similarities = cosine_similarity([query_embedding], self.embeddings)[0]
@@ -73,11 +113,12 @@ class WorkMemory(MemoryModule):
 
 
 class MemoryManager:
-    def __init__(self, work_memory_path, embedding_model):
+    def __init__(self, work_memory_path, episodic_memory_path, embedding_model, llm):
         self.summary = None
+        self.llm = llm
         self.embedding_model = embedding_model
         self.work_memory = WorkMemory(work_memory_path, embedding_model)
-        self.episodic_memory = None
+        self.episodic_memory = EpisodicMemory(episodic_memory_path, embedding_model)
         self.semantic_memory = None
         pass
 
@@ -92,12 +133,73 @@ class MemoryManager:
         for work_memory in work_memory_list:
             self.record(work_memory)
 
-    def learn(self):
+    def learn(self, eps=0.5, min_samples=2):
         """
-        短期工作记忆学习为情景记忆, 语义记忆不变
-        :return:
+        将工作记忆聚类后，提炼为情景记忆
+        :param eps: DBSCAN中的epsilon参数，决定聚类的半径
+        :param min_samples: DBSCAN中的最小样本数，决定形成聚类的最低要求
         """
-        pass
+        # 获取所有工作记忆的嵌入向量
+        embeddings = np.array([memory['embedding'] for memory in self.work_memory.memory])
+
+        if len(embeddings) == 0:
+            return  # 没有工作记忆时，直接返回
+
+        # 使用DBSCAN对嵌入向量进行聚类
+        clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(embeddings)
+        labels = clustering.labels_
+
+        # 对每个聚类生成情景记忆
+        unique_labels = set(labels)
+        for label in unique_labels:
+            if label == -1:
+                # 噪声记忆，不做处理
+                continue
+
+            # 选出属于当前聚类的工作记忆
+            clustered_memories = [self.work_memory.memory[i] for i in range(len(labels)) if labels[i] == label]
+
+            # 根据聚类的工作记忆生成一个情景记忆
+            episodic_memory_text = self._summarize_cluster(clustered_memories)
+
+            # 将情景记忆存储
+            episodic_memory = {
+                "role": "SYSTEM",
+                "event": episodic_memory_text,
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "embedding": self.embedding_model.encode(episodic_memory_text)
+            }
+            self.episodic_memory.store(episodic_memory)
+
+        # 删除已经学习到的工作记忆
+        # self._delete_learned_work_memories(labels)
+
+    def _summarize_cluster(self, clustered_memories):
+        """
+        对一个聚类的工作记忆进行总结，生成情景记忆文本
+        :param clustered_memories: 属于同一个聚类的工作记忆
+        :return: 生成的情景记忆文本
+        """
+        # 获取聚类中所有记忆的文本
+        text = organize_work_memories(clustered_memories)
+
+        # 调用 LLM 来生成摘要
+        chain_input = {
+            "events": text,
+        }
+        response = (SUMMARY_PROMPT | self.llm).invoke(chain_input)
+
+        # 返回 LLM 生成的摘要
+        return response.content
+
+    def _delete_learned_work_memories(self, labels):
+        """
+        删除已经学习并转化为情景记忆的工作记忆
+        :param labels: 聚类算法对每个记忆的标签
+        """
+        # 删除所有被分到聚类中的工作记忆，保留噪声(-1标签)的记忆
+        self.work_memory.memory = [self.work_memory.memory[i] for i in range(len(labels)) if labels[i] == -1]
+        json.dump(self.work_memory.memory, open(self.work_memory.path, 'w'))
 
     def forget(self):
         """
@@ -106,6 +208,7 @@ class MemoryManager:
         """
         work_memory_threshold = datetime.now() - timedelta(days=30)
         self.work_memory.delete(work_memory_threshold)
+        self.episodic_memory.delete(work_memory_threshold)
 
     def self_monitor(self):
         """
@@ -116,7 +219,8 @@ class MemoryManager:
 
     def generate_memory(self, query):
         memory = {
-            "work_memory": self.work_memory.retrieve(query),
+            "work_memory": self.work_memory.retrieve(),
+            "episodic_memory": self.episodic_memory.retrieve(query),
         }
         return memory
 
