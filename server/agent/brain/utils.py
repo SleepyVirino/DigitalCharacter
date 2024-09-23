@@ -23,6 +23,17 @@ def organize_work_memories(memories):
         text += "\n"
     return text
 
+def construct_work_memory(role,text,time,place,src,dest):
+    new_work_memory = {
+        "role": role,
+        "text": text,
+        "time": time,
+        "place": place,
+        "src": src,
+        "dest": dest,
+    }
+    new_work_memory["event"] = organize_work_memory(new_work_memory)
+    return new_work_memory
 
 def organize_episodic_memories(memories):
     text = ""

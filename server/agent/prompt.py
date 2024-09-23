@@ -13,7 +13,7 @@ human_agent_prompt = """
     You({{ name }}) are talking with "{{ user }}".
     
     {% if summary %}
-    The following summary describes what is currently going on:\n{{ summary }}\n
+    The following summary describes what is currently happening from your first-person perspective:\n```{{ summary }}```\n
     {% endif %}
     
     {% if episodic_memory %}
@@ -21,13 +21,13 @@ human_agent_prompt = """
     {{ episodic_memory }}
     {% endif %}
     
-    You({{ name }}) are to write a reply to the following conversation. Your reply should be short.
+    You({{ name }}) need reply to the following conversation. Your reply should be short.
     
     Here is a sequence of memories for the most recent conversation you({{ name }}) had:
     {% if work_memory %}
     {{ work_memory }}
     {% endif %}
-    {{ user }}:{{ text }}
+
     
     
     You ({{ name }}) should respond to the latest conversation as {{ name }}.
@@ -44,7 +44,7 @@ sys_summary_prompt = """
 """
 
 human_summary_prompt = """
-    Please summarize the following events briefly and don't generate irrelevant information:
+    Please summarize the following events briefly and don't generate irrelevant information.
     
     {{ events }}
 """

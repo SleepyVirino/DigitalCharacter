@@ -38,7 +38,7 @@ class WorkMemory(MemoryModule):
         super().__init__()
         self.path = path
         self.embedding_model = embedding_model
-        self.memory = json.load(open(path, 'r'))
+        self.memory = json.load(open(path, 'r', encoding='utf-8'))
         # Load embeddings from the stored memory
 
         self.embeddings = np.array([entry['embedding'] for entry in self.memory])
@@ -51,7 +51,7 @@ class WorkMemory(MemoryModule):
             self.embeddings = np.array([memory["embedding"]])
         else:
             self.embeddings = np.vstack([self.embeddings, memory["embedding"]])
-        json.dump(self.memory, open(self.path, 'w'))
+        json.dump(self.memory, open(self.path, 'w', encoding='utf-8'))
 
     def retrieve(self, hours=3, limit=5):
         if not len(self.memory):
@@ -65,7 +65,7 @@ class WorkMemory(MemoryModule):
     def delete(self, date):
         self.memory = [m for m in self.memory if
                        datetime.strptime(m["time"], "%Y-%m-%d %H:%M:%S") >= date]
-        json.dump(self.memory, open(self.path, 'w'))
+        json.dump(self.memory, open(self.path, 'w', encoding='utf-8'))
 
 
 class EpisodicMemory(MemoryModule):
@@ -73,7 +73,7 @@ class EpisodicMemory(MemoryModule):
         super().__init__()
         self.path = path
         self.embedding_model = embedding_model
-        self.memory = json.load(open(path, 'r'))
+        self.memory = json.load(open(path, 'r', encoding='utf-8'))
         # Load embeddings from the stored memory
 
         self.embeddings = np.array([entry['embedding'] for entry in self.memory])
@@ -86,7 +86,7 @@ class EpisodicMemory(MemoryModule):
             self.embeddings = np.array([memory["embedding"]])
         else:
             self.embeddings = np.vstack([self.embeddings, memory["embedding"]])
-        json.dump(self.memory, open(self.path, 'w'))
+        json.dump(self.memory, open(self.path, 'w', encoding='utf-8'))
 
     def retrieve(self, query, k=3, similarity_threshold=0.5):
         if not len(self.memory):
@@ -108,13 +108,13 @@ class EpisodicMemory(MemoryModule):
     def delete(self, date):
         self.memory = [m for m in self.memory if
                        datetime.strptime(m["time"], "%Y-%m-%d %H:%M:%S") >= date]
-        json.dump(self.memory, open(self.path, 'w'))
+        json.dump(self.memory, open(self.path, 'w', encoding='utf-8'))
 
 
 class MemoryManager:
     def __init__(self, figure, summary_path, work_memory_path, episodic_memory_path, embedding_model, llm):
         self.figure = figure
-        self.summary = open(summary_path, 'r').read()
+        self.summary = open(summary_path, 'r', encoding="utf-8").read()
         self.summary_path = summary_path
         self.llm = llm
         self.embedding_model = embedding_model
@@ -201,7 +201,7 @@ class MemoryManager:
         """
         # 删除所有被分到聚类中的工作记忆，保留噪声(-1标签)的记忆
         self.work_memory.memory = [self.work_memory.memory[i] for i in range(len(labels)) if labels[i] == -1]
-        json.dump(self.work_memory.memory, open(self.work_memory.path, 'w'))
+        json.dump(self.work_memory.memory, open(self.work_memory.path, 'w', encoding="utf-8"))
 
     def forget(self):
         """
@@ -223,7 +223,7 @@ class MemoryManager:
                        "episodic_memory": organize_episodic_memories(memory["episodic_memory"])}
         response = (REFLECT_PROMPT | self.llm).invoke(chain_input)
         self.summary = response.content
-        with open(self.summary_path, "w") as f:
+        with open(self.summary_path, "w", encoding="utf-8") as f:
             f.write(self.summary)
 
     def generate_memory(self, query):

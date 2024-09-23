@@ -2,12 +2,13 @@ from datetime import datetime
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from server.agent.brain.memory import MemoryModule, MemoryManager
+from server.agent.brain.memory import MemoryManager
 from server.agent.brain.decide import DecisionEngine
 from server.agent.brain.embedding import EmbeddingModel
 from server.agent.brain.utils import (
     organize_work_memory,
     organize_work_memories,
+    construct_work_memory,
     organize_episodic_memories
 )
 
@@ -22,10 +23,11 @@ from server.agent.prompt import (
 
 # 主控制器类，负责调度各个子模块
 class BrainModule:
-    def __init__(self, figure, llm, embedding_model, summary_path,work_memory_path, episodic_memory_path):
+    def __init__(self, figure, llm, embedding_model, summary_path, work_memory_path, episodic_memory_path):
         self.figure = figure
         self.llm = llm
-        self.memory_manager = MemoryManager(self.figure, summary_path, work_memory_path, episodic_memory_path, embedding_model, llm)
+        self.memory_manager = MemoryManager(self.figure, summary_path, work_memory_path, episodic_memory_path,
+                                            embedding_model, llm)
         self.decision_engine = DecisionEngine()
         self.tools_manager = None
 
@@ -35,8 +37,11 @@ class BrainModule:
         :param user_input: 多模态信息
         :return:
         """
+        new_work_memory = construct_work_memory("USER", user_input["text"], user_input["time"], user_input["place"],
+                                                user_input["src"], user_input["dest"])
+        self.memory_manager.record(work_memory=new_work_memory)
+
         chain_input = dict()
-        chain_input["text"] = user_input["text"]
 
         memory = self.memory_manager.generate_memory(user_input["text"])
         chain_input["summary"] = self.memory_manager.summary
@@ -45,31 +50,12 @@ class BrainModule:
         chain_input["user"] = user_input["src"]
         chain_input["name"] = user_input["name"]
 
-        print(SYS_AGENT_PROMPT.invoke(chain_input))
         response = (SYS_AGENT_PROMPT | self.llm).invoke(chain_input)
 
-        new_work_memory = [
-            {
-                "role": "USER",
-                "text": user_input["text"],
-                "time": user_input["time"],
-                "place": user_input["place"],
-                "src": user_input["src"],
-                "dest": user_input["dest"],
-            },
-            {
-                "role": "AI",
-                "text": response.content,
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "place": user_input["place"],
-                "src": user_input["dest"],
-                "dest": user_input["src"],
-            }
-        ]
-        for m in new_work_memory:
-            m["event"] = organize_work_memory(m)
+        new_work_memory = construct_work_memory("AI", response.content, datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                                user_input["place"], user_input["dest"], user_input["src"])
+        self.memory_manager.record(work_memory=new_work_memory)
 
-        self.memory_manager.record_batch(new_work_memory)
 
         self.memory_manager.learn()
         self.memory_manager.forget()
