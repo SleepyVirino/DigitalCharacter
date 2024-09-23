@@ -3,8 +3,11 @@ import json
 from datetime import datetime, timedelta
 from sklearn.cluster import DBSCAN
 
-from server.agent.prompt import SUMMARY_PROMPT
-from server.agent.brain.utils import organize_work_memories
+from server.agent.prompt import SUMMARY_PROMPT, REFLECT_PROMPT
+from server.agent.brain.utils import organize_work_memories, organize_episodic_memories
+
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
 
 class MemoryModule:
@@ -28,10 +31,6 @@ class MemoryModule:
         删除记忆
         """
         pass
-
-
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 
 
 class WorkMemory(MemoryModule):
@@ -113,8 +112,10 @@ class EpisodicMemory(MemoryModule):
 
 
 class MemoryManager:
-    def __init__(self, work_memory_path, episodic_memory_path, embedding_model, llm):
-        self.summary = None
+    def __init__(self, figure, summary_path, work_memory_path, episodic_memory_path, embedding_model, llm):
+        self.figure = figure
+        self.summary = open(summary_path, 'r').read()
+        self.summary_path = summary_path
         self.llm = llm
         self.embedding_model = embedding_model
         self.work_memory = WorkMemory(work_memory_path, embedding_model)
@@ -185,6 +186,7 @@ class MemoryManager:
 
         # 调用 LLM 来生成摘要
         chain_input = {
+            "name": self.figure,
             "events": text,
         }
         response = (SUMMARY_PROMPT | self.llm).invoke(chain_input)
@@ -210,12 +212,19 @@ class MemoryManager:
         self.work_memory.delete(work_memory_threshold)
         self.episodic_memory.delete(work_memory_threshold)
 
-    def self_monitor(self):
+    def self_monitor(self, query):
         """
         自我监控理论更新对世界的总结
         :return:
         """
-        pass
+        memory = self.generate_memory(query)
+        chain_input = {"summary": self.summary, "name": self.figure,
+                       "work_memory": organize_work_memories(memory["work_memory"]),
+                       "episodic_memory": organize_episodic_memories(memory["episodic_memory"])}
+        response = (REFLECT_PROMPT | self.llm).invoke(chain_input)
+        self.summary = response.content
+        with open(self.summary_path, "w") as f:
+            f.write(self.summary)
 
     def generate_memory(self, query):
         memory = {
